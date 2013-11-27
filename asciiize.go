@@ -16,6 +16,10 @@ import (
     "time"
 )
 
+/********
+Constants
+********/
+var DOWNSAMPLE_FILTER_RESOLUTION=10;
 /*******
 Pipeline
 *******/
@@ -25,10 +29,12 @@ Parses command line arguments into a dictionary of key-value pairs and a list of
 */
 func parseArgs() (map[string]int, []string){
     var noBlur=flag.Bool("nb", false, "Don't apply the gaussian blur to image")
-    var edgeDetectThreshold=flag.Int("t",100000, "Edge detection threshold")
+    var edgeDetectThreshold=flag.Int("t",35000, "Edge detection threshold")
     var particleThreshold=flag.Int("n",0, "Number of particles in window required for edge to be recognized")
-    var pixelsPerX=flag.Int("x",1, "Number of x pixels per character")
-    var pixelsPerY=flag.Int("y",2, "Number of y pixels per character")
+    var pixelsPerX=flag.Int("x",2, "Number of x pixels per character")
+    var pixelsPerY=flag.Int("y",4, "Number of y pixels per character")
+    var outwidth=flag.Int("w",100, "Width of downsample")
+    var outheight=flag.Int("h",100, "Height of downsample")
     flag.Parse()
 
     if flag.NArg()<1{
@@ -42,6 +48,8 @@ func parseArgs() (map[string]int, []string){
     flags["particleThreshold"]=*particleThreshold
     flags["xWin"]=*pixelsPerX
     flags["yWin"]=*pixelsPerY
+    flags["outwidth"]=*outwidth
+    flags["outheight"]=*outheight
     if *noBlur{
         flags["blur"]=0
     }else{
@@ -93,6 +101,21 @@ func toGrayScale(src image.Image) ([]float64,int,int){
     }
 
     return out,width,height
+}
+
+/*
+Downsamples the image
+*/
+func downsample(img []float64, width int, height int, xper int, yper int,resolution int)([]float64,int,int){
+    var out = make([]float64,width*height/(xper*yper))
+    var nx=width/xper
+    var ny=height/yper
+    for j:=0; j<ny; j++{
+        for i:=0; i<nx; i++{
+            out[i+nx*j]=img[i*xper+width*yper*j]
+        }
+    }
+    return out, width/xper, height/yper
 }
 
 
@@ -222,7 +245,7 @@ func matToString(mat []string,charWidth int,charHeight int)(string){
 /*
 Chains filters to convert an image to an ascii line drawing
 */
-func asciiize(path string,edgeThreshold int,particleThreshold int, blur bool,xWin int,yWin int)(string){
+func asciiize(path string,edgeThreshold int,particleThreshold int, blur bool,xWin int,yWin int, outwidth int, outheight int)(string){
     var start, end time.Time
     start=time.Now()
     var src = loadImg(path)
@@ -230,8 +253,14 @@ func asciiize(path string,edgeThreshold int,particleThreshold int, blur bool,xWi
     println("Time taken by image load:",end.Sub(start).Nanoseconds()/1000000,"ms")
     start=time.Now()
     var gray,width,height = toGrayScale(src)
+    //printImage(gray,width,height)
     end=time.Now()
     println("Time taken by grayscale conversion:",end.Sub(start).Nanoseconds()/1000000,"ms")
+    start=time.Now()
+    gray, width, height = downsample(gray,width,height,width/outwidth,height/outheight,DOWNSAMPLE_FILTER_RESOLUTION)
+    //printImage(gray,width,height)
+    end=time.Now()
+    println("Time taken by downsampling:",end.Sub(start).Nanoseconds()/1000000,"ms")
     var edge, magnitude, angle = edgeDetect(gray,width,height, edgeThreshold, blur)
     start=time.Now()
     var out = quantizeToAscii(edge, magnitude, angle, width, height, xWin, yWin, particleThreshold)
@@ -250,7 +279,7 @@ Main... doh...
 func main(){
     var flags, fileNames = parseArgs()
     for i:=0; i<len(fileNames); i++{
-        fmt.Println(asciiize(fileNames[i], flags["edgeThreshold"], flags["particleThreshold"], flags["blur"]==1, flags["xWin"], flags["yWin"]))
+        fmt.Println(asciiize(fileNames[i], flags["edgeThreshold"], flags["particleThreshold"], flags["blur"]==1, flags["xWin"], flags["yWin"], flags["outwidth"], flags["outheight"]))
     }
 }
 
@@ -286,7 +315,8 @@ Prints the image specified by a matrix
 func printImage(img []float64, width int, height int){
     for j:=0; j<height; j++{
         for i:=0; i<width; i++{
-            fmt.Print(9-int(math.Floor(img[i+j*width]/7281)))
+            fmt.Print(int(math.Ceil(9.0*img[i+j*width]/65535.0)))
+            fmt.Print(" ")
         }
         fmt.Println()
     }
