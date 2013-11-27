@@ -95,8 +95,6 @@ func toGrayScale(src image.Image) ([]float64,int,int){
     return out,width,height
 }
 
-func downsample()([]float64, int, int){
-}
 
 /*
 Applies the Gaussian low pass filter to the image
